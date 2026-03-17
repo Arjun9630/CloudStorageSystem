@@ -1,0 +1,30 @@
+# Node/React
+node_modules/
+dist/
+dist-ssr/
+*.local
+
+# Python/FastAPI Backend
+backend/venv/
+backend/__pycache__/
+*.pyc
+
+# Local Data and Secrets
+backend/.env
+backend/cloudstore.db
+
+# Logs
+logs
+*.log
+npm-debug.log*
+
+# IDE / OS Files
+.vscode/
+.idea/
+*.suo
+*.ntvs*
+*.njsproj
+*.sln
+*.sw?
+.DS_Store
+Thumbs.db

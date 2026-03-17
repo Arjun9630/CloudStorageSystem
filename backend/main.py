@@ -1,4 +1,6 @@
 from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Form
+from fastapi.staticfiles import StaticFiles
+from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
@@ -411,3 +413,20 @@ async def admin_delete_user(user_id: str, current_user: dict = Depends(get_curre
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+# --- Static File Serving (Production) ---
+# Mount the React build directory
+dist_path = os.path.join(os.path.dirname(__file__), "../dist")
+if os.path.exists(dist_path):
+    app.mount("/assets", StaticFiles(directory=os.path.join(dist_path, "assets")), name="assets")
+
+    @app.get("/{full_path:path}")
+    async def serve_react_app(full_path: str):
+        # Allow API routes to be handled first (FastAPI does this by order)
+        # If it's not an API route, serve index.html
+        if full_path.startswith("api"):
+             raise HTTPException(status_code=404)
+        
+        index_file = os.path.join(dist_path, "index.html")
+        return FileResponse(index_file)
+else:
+    print("Warning: 'dist' directory not found. Frontend will not be served.")

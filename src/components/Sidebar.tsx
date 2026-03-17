@@ -1,5 +1,5 @@
 import { NavLink } from 'react-router';
-import { Home, Files, Clock, Star, Trash2, Cloud, LogOut } from 'lucide-react';
+import { Home, Files, Clock, Star, Trash2, Cloud, LogOut, Shield } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStorage } from '../contexts/StorageContext';
 import { motion } from 'motion/react';
@@ -17,6 +17,10 @@ export function Sidebar() {
     { path: '/starred', icon: Star, label: 'Starred' },
     { path: '/trash', icon: Trash2, label: 'Trash' },
   ];
+
+  if (user?.isAdmin) {
+    navItems.push({ path: '/admin', icon: Shield, label: 'Admin Panel' });
+  }
 
   return (
     <aside className="w-64 bg-black/40 backdrop-blur-2xl border-r border-white/10 flex flex-col h-screen sticky top-0 shadow-[4px_0_24px_rgba(0,0,0,0.5)] z-10">

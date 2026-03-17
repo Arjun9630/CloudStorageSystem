@@ -1,16 +1,17 @@
-import sqlite3
-from sqlite3 import Error
+import psycopg2
+from psycopg2 import Error, extras
 import os
+from dotenv import load_dotenv
 
-DB_FILE = "cloudstore.db"
+load_dotenv()
+
+DATABASE_URL = os.getenv("DATABASE_URL")
 
 def get_db_connection():
-    """Create a database connection to the SQLite database."""
+    """Create a database connection to the Postgres database."""
     conn = None
     try:
-        conn = sqlite3.connect(DB_FILE)
-        # Enable row factory to return Dict instead of Tuple
-        conn.row_factory = sqlite3.Row
+        conn = psycopg2.connect(DATABASE_URL)
         return conn
     except Error as e:
         print(f"Error connecting to database: {e}")
@@ -29,7 +30,8 @@ def init_db():
                 name TEXT NOT NULL,
                 email TEXT UNIQUE NOT NULL,
                 password_hash TEXT NOT NULL,
-                total_storage_used INTEGER DEFAULT 0,
+                total_storage_used BIGINT DEFAULT 0,
+                is_admin BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP
             );
             """)
@@ -40,6 +42,7 @@ def init_db():
                 id TEXT PRIMARY KEY,
                 user_id TEXT NOT NULL,
                 name TEXT NOT NULL,
+                parent_id TEXT REFERENCES folders(id),
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id)
             );
@@ -52,10 +55,11 @@ def init_db():
                 user_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 type TEXT NOT NULL,
-                size INTEGER NOT NULL,
+                size BIGINT NOT NULL,
                 s3_key TEXT NOT NULL,
-                is_starred BOOLEAN DEFAULT 0,
-                is_trashed BOOLEAN DEFAULT 0,
+                is_starred BOOLEAN DEFAULT FALSE,
+                is_trashed BOOLEAN DEFAULT FALSE,
+                folder_id TEXT REFERENCES folders(id),
                 uploaded_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id)
             );
@@ -63,28 +67,24 @@ def init_db():
             
             conn.commit()
 
-            # Safely attempt to add folder_id if it doesn't exist (migration for existing DBs)
+            # Migration: Ensure is_admin exists (for existing Postgres DBs if any)
             try:
-                cursor.execute("ALTER TABLE files ADD COLUMN folder_id TEXT REFERENCES folders(id);")
+                cursor.execute("ALTER TABLE users ADD COLUMN IF NOT EXISTS is_admin BOOLEAN DEFAULT FALSE;")
                 conn.commit()
-            except sqlite3.OperationalError:
-                pass # Column already exists
-
-            # Safely add parent_id to folders for nested folder support
-            try:
-                cursor.execute("ALTER TABLE folders ADD COLUMN parent_id TEXT REFERENCES folders(id);")
-                conn.commit()
-            except sqlite3.OperationalError:
-                pass
+            except Error:
+                conn.rollback()
 
             print("Database tables initialized.")
         except Error as e:
             print(f"Error creating tables: {e}")
         finally:
+            cursor.close()
             conn.close()
     else:
         print("Error! cannot create the database connection.")
 
-# Initialize the DB on module load if it doesn't exist
-if not os.path.exists(DB_FILE):
+# Initialize the DB if configured
+if DATABASE_URL:
     init_db()
+else:
+    print("WARNING: DATABASE_URL not found in environment. Database not initialized.")

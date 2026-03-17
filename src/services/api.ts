@@ -194,3 +194,21 @@ export async function signupAPI(name: string, email: string, password: string) {
   }
   return await response.json();
 }
+// ---- Admin Methods ----
+
+export async function adminListUsersAPI() {
+  const response = await fetch(`${API_BASE_URL}/admin/users`, {
+    headers: { ...getAuthHeader() }
+  });
+  if (!response.ok) throw new Error('Failed to fetch users');
+  return await response.json();
+}
+
+export async function adminDeleteUserAPI(userId: string) {
+  const response = await fetch(`${API_BASE_URL}/admin/users/${encodeURIComponent(userId)}`, {
+    method: 'DELETE',
+    headers: { ...getAuthHeader() }
+  });
+  if (!response.ok) throw new Error('Failed to delete user');
+  return await response.json();
+}

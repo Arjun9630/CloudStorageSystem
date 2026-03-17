@@ -8,16 +8,18 @@ import database
 import os
 import time
 import uuid
+import psycopg2.extras
 
 app = FastAPI(title="CloudStorage API")
 
 # Ensure database tables exist before taking requests
-database.init_db()
+if database.DATABASE_URL:
+    database.init_db()
 
 # Add CORS middleware for local frontend dev
 app.add_middleware(
     CORSMiddleware,
-    allow_origins=["http://localhost:5173", "http://localhost:3000"], 
+    allow_origins=["http://localhost:5173", "http://localhost:3000", "https://cloud-storage-frontend.onrender.com"], 
     allow_credentials=True,
     allow_methods=["*"],
     allow_headers=["*"],
@@ -50,7 +52,10 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
         raise HTTPException(status_code=401, detail="Invalid token")
         
     conn = database.get_db_connection()
-    user = conn.execute("SELECT id, name, email, total_storage_used FROM users WHERE id = ?", (payload["sub"],)).fetchone()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT id, name, email, total_storage_used, is_admin FROM users WHERE id = %s", (payload["sub"],))
+    user = cur.fetchone()
+    cur.close()
     conn.close()
     
     if not user:
@@ -62,54 +67,63 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
 @app.post("/api/auth/signup")
 def signup(data: UserSignup):
     conn = database.get_db_connection()
-    existing_user = conn.execute("SELECT id FROM users WHERE email = ?", (data.email,)).fetchone()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT id FROM users WHERE email = %s", (data.email,))
+    existing_user = cur.fetchone()
     if existing_user:
+        cur.close()
         conn.close()
         raise HTTPException(status_code=400, detail="Email already registered")
         
     user_id = str(uuid.uuid4())
     hashed_password = auth.get_password_hash(data.password)
     
-    # Generate token FIRST so if it crashes due to lib error, we haven't dirtied the DB
+    # Generate token FIRST
     try:
         token = auth.create_access_token({"sub": user_id, "email": data.email})
     except Exception as e:
+        cur.close()
         conn.close()
         raise HTTPException(status_code=500, detail=f"Token Generation Failed: {str(e)}")
     
-    # Commit the user to SQLite only after Token generation is successful
-    conn.execute(
-        "INSERT INTO users (id, name, email, password_hash) VALUES (?, ?, ?, ?)",
+    # Commit the user
+    cur.execute(
+        "INSERT INTO users (id, name, email, password_hash) VALUES (%s, %s, %s, %s)",
         (user_id, data.name, data.email, hashed_password)
     )
     conn.commit()
+    cur.close()
     conn.close()
     
-    return {"token": token, "user": {"id": user_id, "name": data.name, "email": data.email}}
+    return {"token": token, "user": {"id": user_id, "name": data.name, "email": data.email, "isAdmin": False}}
 
 @app.post("/api/auth/login")
 def login(data: UserLogin):
     conn = database.get_db_connection()
-    user = conn.execute("SELECT id, name, email, password_hash FROM users WHERE email = ?", (data.email,)).fetchone()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT id, name, email, password_hash, is_admin FROM users WHERE email = %s", (data.email,))
+    user = cur.fetchone()
+    cur.close()
     conn.close()
     
     if not user or not auth.verify_password(data.password, user["password_hash"]):
         raise HTTPException(status_code=401, detail="Invalid email or password")
         
     token = auth.create_access_token({"sub": user["id"], "email": user["email"]})
-    return {"token": token, "user": {"id": user["id"], "name": user["name"], "email": user["email"]}}
+    return {"token": token, "user": {"id": user["id"], "name": user["name"], "email": user["email"], "isAdmin": user["is_admin"]}}
 
 # --- File Routes ---
 @app.get("/api/files")
 async def list_files(prefix: str = "", current_user: dict = Depends(get_current_user)):
-    """List objects from DB associated with current user, linked to S3 presigned URLs."""
     try:
         conn = database.get_db_connection()
-        # Ensure we only fetch files for this specific user
-        files_query = conn.execute("""
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("""
             SELECT id, name, type, size, s3_key, is_starred, is_trashed, uploaded_at, folder_id 
-            FROM files WHERE user_id = ?
-        """, (current_user["id"],)).fetchall()
+            FROM files WHERE user_id = %s
+        """, (current_user["id"],))
+        files_query = cur.fetchall()
+        cur.close()
         conn.close()
         
         formatted_files = []
@@ -119,9 +133,9 @@ async def list_files(prefix: str = "", current_user: dict = Depends(get_current_
                 "name": row["name"],
                 "type": row["type"],
                 "size": row["size"],
-                "uploadedAt": row["uploaded_at"],
+                "uploadedAt": row["uploaded_at"].isoformat() if hasattr(row["uploaded_at"], "isoformat") else row["uploaded_at"],
                 "url": aws.get_presigned_url(row["s3_key"]),
-                "folderId": row["folder_id"] if "folder_id" in row.keys() else None,
+                "folderId": row["folder_id"],
                 "isStarred": bool(row["is_starred"]),
                 "isTrashed": bool(row["is_trashed"])
             })
@@ -135,40 +149,36 @@ async def upload_file(
     folder_id: Optional[str] = Form(None),
     current_user: dict = Depends(get_current_user)
 ):
-    """Upload a file to S3 in the user's isolated prefix + Save in DB."""
     try:
-        # Read file contents and enforce size limit
         contents = await file.read()
         file_size = len(contents)
         
         if file_size > MAX_FILE_SIZE_BYTES:
             raise HTTPException(status_code=400, detail="File exceeds 50MB limit.")
             
-        # Check quota
         conn = database.get_db_connection()
-        user_storage = conn.execute("SELECT total_storage_used FROM users WHERE id = ?", (current_user["id"],)).fetchone()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT total_storage_used FROM users WHERE id = %s", (current_user["id"],))
+        user_storage = cur.fetchone()
         
         if user_storage and user_storage["total_storage_used"] + file_size > MAX_STORAGE_QUOTA_BYTES:
+            cur.close()
             conn.close()
-            raise HTTPException(status_code=400, detail="Storage quota (1GB) exceeded.")
+            raise HTTPException(status_code=400, detail="Storage quota (256MB) exceeded.")
             
-        # Generate keys
         file_id = str(uuid.uuid4())
         s3_key_suffix = f"{int(time.time())}-{file_id[:8]}-{file.filename}"
-        
-        # Upload to S3 natively via aws module
         s3_full_key = aws.upload_s3_file(current_user["id"], contents, s3_key_suffix, file.content_type)
         
-        # Save to mapping DB
         uploaded_time = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-        conn.execute("""
+        cur.execute("""
             INSERT INTO files (id, user_id, name, type, size, s3_key, uploaded_at, folder_id)
-            VALUES (?, ?, ?, ?, ?, ?, ?, ?)
+            VALUES (%s, %s, %s, %s, %s, %s, %s, %s)
         """, (file_id, current_user["id"], file.filename, file.content_type, file_size, s3_full_key, uploaded_time, folder_id))
         
-        # Update user storage quota count
-        conn.execute("UPDATE users SET total_storage_used = total_storage_used + ? WHERE id = ?", (file_size, current_user["id"]))
+        cur.execute("UPDATE users SET total_storage_used = total_storage_used + %s WHERE id = %s", (file_size, current_user["id"]))
         conn.commit()
+        cur.close()
         conn.close()
         
         return {
@@ -180,8 +190,7 @@ async def upload_file(
             "url": aws.get_presigned_url(s3_full_key),
             "folderId": folder_id,
             "isStarred": False,
-            "isTrashed": False,
-            "message": "File uploaded successfully"
+            "isTrashed": False
         }
     except HTTPException as e:
         raise e
@@ -190,65 +199,72 @@ async def upload_file(
 
 @app.delete("/api/files/{file_id}")
 async def delete_file(file_id: str, current_user: dict = Depends(get_current_user)):
-    """Delete a file from DB and S3."""
     try:
         conn = database.get_db_connection()
-        file_row = conn.execute("SELECT id, s3_key, size FROM files WHERE id = ? AND user_id = ?", (file_id, current_user["id"])).fetchone()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT id, s3_key, size FROM files WHERE id = %s AND user_id = %s", (file_id, current_user["id"]))
+        file_row = cur.fetchone()
         
         if not file_row:
+            cur.close()
             conn.close()
             raise HTTPException(status_code=404, detail="File not found")
             
-        # Delete from S3
         aws.delete_s3_file(file_row["s3_key"])
         
-        # Delete from DB and update quota
-        conn.execute("DELETE FROM files WHERE id = ?", (file_id,))
-        conn.execute("UPDATE users SET total_storage_used = max(0, total_storage_used - ?) WHERE id = ?", (file_row["size"], current_user["id"]))
+        cur.execute("DELETE FROM files WHERE id = %s", (file_id,))
+        cur.execute("UPDATE users SET total_storage_used = GREATEST(0, total_storage_used - %s) WHERE id = %s", (file_row["size"], current_user["id"]))
         conn.commit()
+        cur.close()
         conn.close()
         
-        return {"status": "success", "message": f"Deleted file {file_id}"}
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/files/{file_id}/star")
 async def toggle_star(file_id: str, current_user: dict = Depends(get_current_user)):
-    """Toggle the starred state of a file in the DB."""
     try:
         conn = database.get_db_connection()
-        file_row = conn.execute("SELECT is_starred FROM files WHERE id = ? AND user_id = ?", (file_id, current_user["id"])).fetchone()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT is_starred FROM files WHERE id = %s AND user_id = %s", (file_id, current_user["id"]))
+        file_row = cur.fetchone()
         
         if not file_row:
+            cur.close()
             conn.close()
             raise HTTPException(status_code=404, detail="File not found")
             
-        new_val = 0 if file_row["is_starred"] else 1
-        conn.execute("UPDATE files SET is_starred = ? WHERE id = ?", (new_val, file_id))
+        new_val = not file_row["is_starred"]
+        cur.execute("UPDATE files SET is_starred = %s WHERE id = %s", (new_val, file_id))
         conn.commit()
+        cur.close()
         conn.close()
         
-        return {"status": "success", "isStarred": bool(new_val)}
+        return {"status": "success", "isStarred": new_val}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.put("/api/files/{file_id}/trash")
 async def toggle_trash(file_id: str, current_user: dict = Depends(get_current_user)):
-    """Toggle the trashed state of a file (soft delete) in the DB."""
     try:
         conn = database.get_db_connection()
-        file_row = conn.execute("SELECT is_trashed FROM files WHERE id = ? AND user_id = ?", (file_id, current_user["id"])).fetchone()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT is_trashed FROM files WHERE id = %s AND user_id = %s", (file_id, current_user["id"]))
+        file_row = cur.fetchone()
         
         if not file_row:
+            cur.close()
             conn.close()
             raise HTTPException(status_code=404, detail="File not found")
             
-        new_val = 0 if file_row["is_trashed"] else 1
-        conn.execute("UPDATE files SET is_trashed = ? WHERE id = ?", (new_val, file_id))
+        new_val = not file_row["is_trashed"]
+        cur.execute("UPDATE files SET is_trashed = %s WHERE id = %s", (new_val, file_id))
         conn.commit()
+        cur.close()
         conn.close()
         
-        return {"status": "success", "isTrashed": bool(new_val)}
+        return {"status": "success", "isTrashed": new_val}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -257,29 +273,20 @@ class FileMove(BaseModel):
 
 @app.put("/api/files/{file_id}/move")
 async def move_file(file_id: str, data: FileMove, current_user: dict = Depends(get_current_user)):
-    """Move a file to a different folder (or root if folder_id is None)."""
     try:
         conn = database.get_db_connection()
-        # Verify ownership of file
-        file_row = conn.execute("SELECT id FROM files WHERE id = ? AND user_id = ?", (file_id, current_user["id"])).fetchone()
-        
-        if not file_row:
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT id FROM files WHERE id = %s AND user_id = %s", (file_id, current_user["id"]))
+        if not cur.fetchone():
+            cur.close()
             conn.close()
             raise HTTPException(status_code=404, detail="File not found")
             
-        # Verify ownership of target folder if it's not None
-        if data.folder_id:
-            folder_row = conn.execute("SELECT id FROM folders WHERE id = ? AND user_id = ?", (data.folder_id, current_user["id"])).fetchone()
-            if not folder_row:
-                conn.close()
-                raise HTTPException(status_code=404, detail="Target folder not found")
-                
-        # Execute move
-        conn.execute("UPDATE files SET folder_id = ? WHERE id = ?", (data.folder_id, file_id))
+        cur.execute("UPDATE files SET folder_id = %s WHERE id = %s", (data.folder_id, file_id))
         conn.commit()
+        cur.close()
         conn.close()
-        
-        return {"status": "success", "message": "File moved successfully", "folderId": data.folder_id}
+        return {"status": "success"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
@@ -290,58 +297,115 @@ class FolderCreate(BaseModel):
 
 @app.get("/api/folders")
 async def list_folders(current_user: dict = Depends(get_current_user)):
-    """List all folders for the current user."""
     try:
         conn = database.get_db_connection()
-        folders_query = conn.execute("SELECT id, name, parent_id, created_at FROM folders WHERE user_id = ?", (current_user["id"],)).fetchall()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        cur.execute("SELECT id, name, parent_id, created_at FROM folders WHERE user_id = %s", (current_user["id"],))
+        rows = cur.fetchall()
+        cur.close()
         conn.close()
-        
-        return [{"id": row["id"], "name": row["name"], "parentId": row["parent_id"] if "parent_id" in row.keys() else None, "createdAt": row["created_at"]} for row in folders_query]
+        return [{"id": r["id"], "name": r["name"], "parentId": r["parent_id"], "createdAt": r["created_at"].isoformat() if hasattr(r["created_at"], "isoformat") else r["created_at"]} for r in rows]
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.post("/api/folders")
 async def create_folder(data: FolderCreate, current_user: dict = Depends(get_current_user)):
-    """Create a new folder for the current user."""
     try:
         folder_id = str(uuid.uuid4())
         created_time = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
-        
         conn = database.get_db_connection()
-        conn.execute(
-            "INSERT INTO folders (id, user_id, name, parent_id, created_at) VALUES (?, ?, ?, ?, ?)",
+        cur = conn.cursor()
+        cur.execute(
+            "INSERT INTO folders (id, user_id, name, parent_id, created_at) VALUES (%s, %s, %s, %s, %s)",
             (folder_id, current_user["id"], data.name, data.parent_id, created_time)
         )
         conn.commit()
+        cur.close()
         conn.close()
-        
         return {"id": folder_id, "name": data.name, "parentId": data.parent_id, "createdAt": created_time}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
 @app.delete("/api/folders/{folder_id}")
 async def delete_folder(folder_id: str, current_user: dict = Depends(get_current_user)):
-    """Delete a folder and optionally handle files within it."""
     try:
         conn = database.get_db_connection()
-        
-        # Verify folder ownership
-        folder = conn.execute("SELECT id FROM folders WHERE id = ? AND user_id = ?", (folder_id, current_user["id"])).fetchone()
-        if not folder:
-            conn.close()
-            raise HTTPException(status_code=404, detail="Folder not found")
-            
-        # Optional UX pattern: We simply set the file folder_id to NULL to push them back to root, instead of deleting physical files.
-        conn.execute("UPDATE files SET folder_id = NULL WHERE folder_id = ? AND user_id = ?", (folder_id, current_user["id"]))
-        # Recursively bump nested folders back to root
-        conn.execute("UPDATE folders SET parent_id = NULL WHERE parent_id = ? AND user_id = ?", (folder_id, current_user["id"]))
-        
-        # Delete folder
-        conn.execute("DELETE FROM folders WHERE id = ?", (folder_id,))
+        cur = conn.cursor()
+        cur.execute("UPDATE files SET folder_id = NULL WHERE folder_id = %s AND user_id = %s", (folder_id, current_user["id"]))
+        cur.execute("UPDATE folders SET parent_id = NULL WHERE parent_id = %s AND user_id = %s", (folder_id, current_user["id"]))
+        cur.execute("DELETE FROM folders WHERE id = %s AND user_id = %s", (folder_id, current_user["id"]))
         conn.commit()
+        cur.close()
+        conn.close()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+# --- Admin Routes ---
+@app.get("/api/admin/users")
+async def admin_list_users(current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        conn = database.get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        # Fetch users with their file counts and total storage used
+        cur.execute("""
+            SELECT u.id, u.name, u.email, u.total_storage_used, u.created_at, u.is_admin,
+            (SELECT COUNT(*) FROM files f WHERE f.user_id = u.id) as file_count
+            FROM users u
+            ORDER BY u.created_at DESC
+        """)
+        users = cur.fetchall()
+        cur.close()
         conn.close()
         
-        return {"status": "success", "message": "Folder deleted."}
+        return [{
+            "id": u["id"],
+            "name": u["name"],
+            "email": u["email"],
+            "totalStorageUsed": u["total_storage_used"],
+            "fileCount": u["file_count"],
+            "isAdmin": u["is_admin"],
+            "createdAt": u["created_at"].isoformat() if hasattr(u["created_at"], "isoformat") else u["created_at"]
+        } for u in users]
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.delete("/api/admin/users/{user_id}")
+async def admin_delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    if user_id == current_user["id"]:
+        raise HTTPException(status_code=400, detail="Cannot delete yourself")
+    
+    try:
+        conn = database.get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # 1. Get all file S3 keys for cleanup
+        cur.execute("SELECT s3_key FROM files WHERE user_id = %s", (user_id,))
+        files = cur.fetchall()
+        
+        # 2. Cleanup S3
+        for f in files:
+            try:
+                aws.delete_s3_file(f["s3_key"])
+            except:
+                pass # Continue even if one file fail
+        
+        # 3. Delete from DB (cascade manual cleanup)
+        cur.execute("DELETE FROM files WHERE user_id = %s", (user_id,))
+        cur.execute("DELETE FROM folders WHERE user_id = %s", (user_id,))
+        cur.execute("DELETE FROM users WHERE id = %s", (user_id,))
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return {"status": "success", "message": "User and all associated data deleted"}
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 

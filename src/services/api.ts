@@ -136,6 +136,23 @@ export async function moveFileAPI(id: string, folderId: string | null) {
   }
 }
 
+/**
+ * Rename a file.
+ */
+export async function renameFileAPI(id: string, newName: string) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/files/${encodeURIComponent(id)}/rename`, {
+      method: 'PUT',
+      headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName })
+    });
+    if (!response.ok) throw new Error(`Rename file failed`);
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
+}
+
 // ---- Folders Methods ----
 
 export async function listFolders() {
@@ -166,6 +183,23 @@ export async function deleteFolderAPI(id: string) {
   });
   if (!response.ok) throw new Error('Failed to delete folder');
   return await response.json();
+}
+
+/**
+ * Rename a folder.
+ */
+export async function renameFolderAPI(id: string, newName: string) {
+  try {
+    const response = await fetch(`${API_BASE_URL}/folders/${encodeURIComponent(id)}/rename`, {
+      method: 'PUT',
+      headers: { ...getAuthHeader(), 'Content-Type': 'application/json' },
+      body: JSON.stringify({ name: newName })
+    });
+    if (!response.ok) throw new Error(`Rename folder failed`);
+    return await response.json();
+  } catch (error) {
+    throw error;
+  }
 }
 
 // ---- Auth Methods ----

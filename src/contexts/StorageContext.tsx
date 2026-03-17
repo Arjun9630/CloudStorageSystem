@@ -1,5 +1,5 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { uploadFile as apiUploadFile, listFiles as apiListFiles, deleteFile as apiDeleteFile, toggleStarredAPI, toggleTrashedAPI, listFolders as apiListFolders, createFolderAPI, deleteFolderAPI, moveFileAPI } from '../services/api';
+import { uploadFile as apiUploadFile, listFiles as apiListFiles, deleteFile as apiDeleteFile, toggleStarredAPI, toggleTrashedAPI, listFolders as apiListFolders, createFolderAPI, deleteFolderAPI, moveFileAPI, renameFileAPI, renameFolderAPI } from '../services/api';
 import { useAuth } from './AuthContext';
 
 export interface CloudFolder {
@@ -28,6 +28,7 @@ interface StorageContextType {
   uploadFiles: (fileList: FileList, folderId?: string) => void;
   createFolder: (name: string, parentId?: string) => Promise<void>;
   deleteFolder: (id: string) => Promise<void>;
+  renameFolder: (id: string, newName: string) => Promise<void>;
   currentFolderId: string | null;
   setCurrentFolderId: (id: string | null) => void;
   deleteFile: (id: string) => void;
@@ -170,6 +171,15 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
+  const renameFolder = async (id: string, newName: string) => {
+    try {
+      await renameFolderAPI(id, newName);
+      setFolders(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+    } catch (error) {
+      console.error('Failed to rename folder:', error);
+    }
+  };
+
   const deleteFile = async (id: string) => {
     // Soft Delete (Trash) via Backend toggle API
     try {
@@ -218,9 +228,13 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
     }
   };
 
-  const renameFile = (id: string, newName: string) => {
-    // Future iteration: create a rename endpoint on the backend. Just local state for now.
-    setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+  const renameFile = async (id: string, newName: string) => {
+    try {
+      await renameFileAPI(id, newName);
+      setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+    } catch (error) {
+      console.error('Failed to rename file:', error);
+    }
   };
 
   const totalStorage = 256 * 1024 * 1024; // 256 MB Server Size Match
@@ -256,6 +270,7 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
         permanentlyDeleteFile,
         toggleStar, 
         renameFile,
+        renameFolder,
         totalStorage,
         usedStorage,
         storageByType,

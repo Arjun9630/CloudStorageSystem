@@ -30,7 +30,6 @@ app.add_middleware(
 )
 
 # Constants
-MAX_FILE_SIZE_BYTES = 50 * 1024 * 1024  # 50MB
 MAX_STORAGE_QUOTA_BYTES = 256 * 1024 * 1024  # 256MB
 
 # --- Models ---
@@ -138,7 +137,7 @@ async def list_files(prefix: str = "", current_user: dict = Depends(get_current_
                 "type": row["type"],
                 "size": row["size"],
                 "uploadedAt": row["uploaded_at"].isoformat() if hasattr(row["uploaded_at"], "isoformat") else row["uploaded_at"],
-                "url": aws.get_presigned_url(row["s3_key"]),
+                "url": aws.get_presigned_url(row["s3_key"], row["name"]),
                 "folderId": row["folder_id"],
                 "isStarred": bool(row["is_starred"]),
                 "isTrashed": bool(row["is_trashed"])
@@ -154,12 +153,9 @@ async def upload_file(
     current_user: dict = Depends(get_current_user)
 ):
     try:
-        contents = await file.read()
-        file_size = len(contents)
+        # Use file.size which is available in FastAPI/Starlette for UploadFile
+        file_size = file.size 
         
-        if file_size > MAX_FILE_SIZE_BYTES:
-            raise HTTPException(status_code=400, detail="File exceeds 50MB limit.")
-            
         conn = database.get_db_connection()
         cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
         cur.execute("SELECT total_storage_used FROM users WHERE id = %s", (current_user["id"],))
@@ -168,11 +164,13 @@ async def upload_file(
         if user_storage and user_storage["total_storage_used"] + file_size > MAX_STORAGE_QUOTA_BYTES:
             cur.close()
             conn.close()
-            raise HTTPException(status_code=400, detail="Storage quota (256MB) exceeded.")
+            raise HTTPException(status_code=400, detail=f"Storage quota exceeded. Available: {(MAX_STORAGE_QUOTA_BYTES - user_storage['total_storage_used']) / (1024*1024):.2f}MB, Requested: {file_size / (1024*1024):.2f}MB")
             
         file_id = str(uuid.uuid4())
         s3_key_suffix = f"{int(time.time())}-{file_id[:8]}-{file.filename}"
-        s3_full_key = aws.upload_s3_file(current_user["id"], contents, s3_key_suffix, file.content_type)
+        
+        # Pass file.file (the spooled temporary file) directly for streaming
+        s3_full_key = aws.upload_s3_file(current_user["id"], file.file, s3_key_suffix, file.content_type)
         
         uploaded_time = time.strftime('%Y-%m-%dT%H:%M:%SZ', time.gmtime())
         cur.execute("""
@@ -191,7 +189,7 @@ async def upload_file(
             "type": file.content_type,
             "size": file_size,
             "uploadedAt": uploaded_time,
-            "url": aws.get_presigned_url(s3_full_key),
+            "url": aws.get_presigned_url(s3_full_key, file.filename),
             "folderId": folder_id,
             "isStarred": False,
             "isTrashed": False
@@ -294,6 +292,22 @@ async def move_file(file_id: str, data: FileMove, current_user: dict = Depends(g
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+class RenameRequest(BaseModel):
+    name: str
+
+@app.put("/api/files/{file_id}/rename")
+async def rename_file(file_id: str, data: RenameRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        conn = database.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE files SET name = %s WHERE id = %s AND user_id = %s", (data.name, file_id, current_user["id"]))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
 # --- Folder Routes ---
 class FolderCreate(BaseModel):
     name: str
@@ -338,6 +352,19 @@ async def delete_folder(folder_id: str, current_user: dict = Depends(get_current
         cur.execute("UPDATE files SET folder_id = NULL WHERE folder_id = %s AND user_id = %s", (folder_id, current_user["id"]))
         cur.execute("UPDATE folders SET parent_id = NULL WHERE parent_id = %s AND user_id = %s", (folder_id, current_user["id"]))
         cur.execute("DELETE FROM folders WHERE id = %s AND user_id = %s", (folder_id, current_user["id"]))
+        conn.commit()
+        cur.close()
+        conn.close()
+        return {"status": "success"}
+    except Exception as e:
+        raise HTTPException(status_code=500, detail=str(e))
+
+@app.put("/api/folders/{folder_id}/rename")
+async def rename_folder(folder_id: str, data: RenameRequest, current_user: dict = Depends(get_current_user)):
+    try:
+        conn = database.get_db_connection()
+        cur = conn.cursor()
+        cur.execute("UPDATE folders SET name = %s WHERE id = %s AND user_id = %s", (data.name, folder_id, current_user["id"]))
         conn.commit()
         cur.close()
         conn.close()

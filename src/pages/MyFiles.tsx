@@ -4,10 +4,10 @@ import { FileGrid } from '../components/FileGrid';
 import { FilePreview } from '../components/FilePreview';
 import { FileUpload } from '../components/FileUpload';
 import { CloudFile } from '../contexts/StorageContext';
-import { Search, Folder, ChevronRight, Trash2, FolderPlus } from 'lucide-react';
+import { Search, Folder, ChevronRight, Trash2, FolderPlus, Edit2 } from 'lucide-react';
 
 export function MyFiles() {
-  const { files, folders, currentFolderId, setCurrentFolderId, createFolder, deleteFolder, deleteFile, toggleStar, renameFile } = useStorage();
+  const { files, folders, currentFolderId, setCurrentFolderId, createFolder, deleteFolder, renameFolder, deleteFile, toggleStar, renameFile } = useStorage();
   const [selectedFile, setSelectedFile] = useState<CloudFile | null>(null);
   const [searchQuery, setSearchQuery] = useState('');
 
@@ -99,17 +99,33 @@ export function MyFiles() {
                 >
                   <Folder className="w-6 h-6 text-blue-300 group-hover:text-blue-200 flex-shrink-0 drop-shadow-sm" />
                   <span className="text-sm font-medium text-gray-200 truncate flex-1 drop-shadow-sm group-hover:text-white">{folder.name}</span>
-                  <button
-                    onClick={(e) => {
-                      e.stopPropagation();
-                      if (window.confirm('Delete folder? Files and nested folders inside will be moved back to the root directory.')) {
-                        deleteFolder(folder.id);
-                      }
-                    }}
-                    className="opacity-0 group-hover:opacity-100 p-1 hover:bg-red-500/20 text-red-300 rounded transition-all flex-shrink-0"
-                  >
-                    <Trash2 className="w-4 h-4" />
-                  </button>
+                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        const newName = window.prompt('Rename folder to:', folder.name);
+                        if (newName && newName.trim() && newName.trim() !== folder.name) {
+                          renameFolder(folder.id, newName.trim());
+                        }
+                      }}
+                      className="p-1 hover:bg-white/20 text-blue-300 rounded transition-all"
+                      title="Rename folder"
+                    >
+                      <Edit2 className="w-4 h-4" />
+                    </button>
+                    <button
+                      onClick={(e) => {
+                        e.stopPropagation();
+                        if (window.confirm('Delete folder? Files and nested folders inside will be moved back to the root directory.')) {
+                          deleteFolder(folder.id);
+                        }
+                      }}
+                      className="p-1 hover:bg-red-500/20 text-red-300 rounded transition-all"
+                      title="Delete folder"
+                    >
+                      <Trash2 className="w-4 h-4" />
+                    </button>
+                  </div>
                 </div>
               ))}
             </div>

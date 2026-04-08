@@ -440,6 +440,73 @@ async def admin_delete_user(user_id: str, current_user: dict = Depends(get_curre
     except Exception as e:
         raise HTTPException(status_code=500, detail=str(e))
 
+@app.post("/api/admin/sync")
+async def admin_global_sync(current_user: dict = Depends(get_current_user)):
+    """
+    Syncs the database with S3 for ALL users. 
+    Removes database records that don't exist in S3.
+    """
+    if not current_user.get("is_admin"):
+        raise HTTPException(status_code=403, detail="Admin access required")
+    
+    try:
+        conn = database.get_db_connection()
+        cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+        
+        # 1. Fetch all users
+        cur.execute("SELECT id, email FROM users")
+        users = cur.fetchall()
+        
+        summary = {
+            "total_users_processed": len(users),
+            "total_files_removed": 0,
+            "users_synced": []
+        }
+        
+        for user in users:
+            user_id = user["id"]
+            
+            # 2. Get all S3 objects for this user
+            # aws.list_s3_files returns a list of dictionaries with 'Key' and 'Size'
+            s3_objects = aws.list_s3_files(user_id)
+            s3_keys = {obj["Key"] for obj in s3_objects}
+            
+            # 3. Get all file records from DB for this user
+            cur.execute("SELECT id, s3_key, size FROM files WHERE user_id = %s", (user_id,))
+            db_files = cur.fetchall()
+            
+            removed_count = 0
+            remaining_size = 0
+            
+            # 4. Identify ghosts and remove them
+            for db_f in db_files:
+                if db_f["s3_key"] not in s3_keys:
+                    cur.execute("DELETE FROM files WHERE id = %s", (db_f["id"],))
+                    removed_count += 1
+                else:
+                    remaining_size += db_f["size"]
+            
+            # 5. Update user total storage used to be accurate
+            cur.execute("UPDATE users SET total_storage_used = %s WHERE id = %s", (remaining_size, user_id))
+            
+            if removed_count > 0:
+                summary["total_files_removed"] += removed_count
+                summary["users_synced"].append({
+                    "email": user["email"],
+                    "files_removed": removed_count
+                })
+        
+        conn.commit()
+        cur.close()
+        conn.close()
+        
+        return {"status": "success", "summary": summary}
+        
+    except Exception as e:
+        if 'conn' in locals() and conn:
+            conn.rollback()
+        raise HTTPException(status_code=500, detail=str(e))
+
 # --- Static File Serving (Production) ---
 # Mount the React build directory
 dist_path = os.path.join(os.path.dirname(__file__), "../dist")

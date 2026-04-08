@@ -91,16 +91,16 @@ export function StorageProvider({ children }: { children: React.ReactNode }) {
   }, [user]);
 
   useEffect(() => {
-    if (folders.length > 0) {
+    if (user) {
       localStorage.setItem('cloudStorage_folders', JSON.stringify(folders));
     }
-  }, [folders]);
+  }, [folders, user]);
 
   useEffect(() => {
-    if (files.length > 0) {
+    if (user) {
       localStorage.setItem('cloudStorage_files', JSON.stringify(files));
     }
-  }, [files]);
+  }, [files, user]);
 
   const uploadFiles = async (fileList: FileList, targetFolderId?: string) => {
     setIsUploading(true);

@@ -1,6 +1,6 @@
 import { useState, useEffect } from 'react';
-import { Users, Trash2, Shield, Info, HardDrive, FileText, Calendar } from 'lucide-react';
-import { adminListUsersAPI, adminDeleteUserAPI } from '../services/api';
+import { Users, Trash2, Shield, Info, HardDrive, FileText, Calendar, RefreshCw } from 'lucide-react';
+import { adminListUsersAPI, adminDeleteUserAPI, adminSyncAPI } from '../services/api';
 import { motion, AnimatePresence } from 'motion/react';
 import { toast } from 'sonner';
 
@@ -18,6 +18,7 @@ export function AdminDashboard() {
   const [users, setUsers] = useState<AdminUser[]>([]);
   const [loading, setLoading] = useState(true);
   const [deletingId, setDeletingId] = useState<string | null>(null);
+  const [isSyncing, setIsSyncing] = useState(false);
 
   useEffect(() => {
     fetchUsers();
@@ -50,6 +51,23 @@ export function AdminDashboard() {
     }
   };
 
+  const handleGlobalSync = async () => {
+    if (!confirm("Are you sure you want to run a GLOBAL system sync? This will audit every user's files against S3 and remove any stale records. This might take a moment.")) return;
+    
+    try {
+      setIsSyncing(true);
+      const result = await adminSyncAPI();
+      const removed = result.summary.total_files_removed;
+      toast.success(`Global sync completed! Cleaned up ${removed} stale records.`);
+      // Refresh user list to show updated storage stats
+      fetchUsers();
+    } catch (error: any) {
+      toast.error(error.message || 'Global sync failed');
+    } finally {
+      setIsSyncing(false);
+    }
+  };
+
   function formatBytes(bytes: number): string {
     if (bytes === 0) return '0 B';
     const k = 1024;
@@ -78,10 +96,23 @@ export function AdminDashboard() {
           <div className="p-3 bg-blue-500/20 rounded-2xl border border-blue-500/30">
             <Shield className="w-8 h-8 text-blue-400" />
           </div>
-          <div>
+          <div className="flex-1">
             <h1 className="text-3xl font-bold text-white tracking-tight">Admin Dashboard</h1>
             <p className="text-gray-400 mt-1">Manage system users and monitor S3 capacity</p>
           </div>
+          <motion.div
+             whileHover={{ scale: 1.05 }}
+             whileTap={{ scale: 0.95 }}
+          >
+            <button
+              onClick={handleGlobalSync}
+              disabled={isSyncing}
+              className="flex items-center gap-2 px-5 py-3 bg-gradient-to-r from-blue-600 to-indigo-600 hover:from-blue-500 hover:to-indigo-500 text-white font-bold rounded-2xl shadow-xl shadow-blue-500/20 border border-white/10 transition-all disabled:opacity-50 disabled:cursor-not-allowed group"
+            >
+              <RefreshCw className={`w-5 h-5 ${isSyncing ? 'animate-spin' : 'group-hover:rotate-180 transition-transform duration-500'}`} />
+              {isSyncing ? 'Syncing System...' : 'Global System Sync'}
+            </button>
+          </motion.div>
         </motion.div>
       </header>
 

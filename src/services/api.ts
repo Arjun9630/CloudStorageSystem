@@ -249,3 +249,19 @@ export async function adminDeleteUserAPI(userId: string) {
   if (!response.ok) throw new Error('Failed to delete user');
   return await response.json();
 }
+
+/**
+ * Triggers a global S3-to-DB synchronization for all users.
+ * RESTRICTED: Admin only.
+ */
+export async function adminSyncAPI() {
+  const response = await fetch(`${API_BASE_URL}/admin/sync`, {
+    method: 'POST',
+    headers: { ...getAuthHeader() }
+  });
+  if (!response.ok) {
+    const errorData = await response.json().catch(() => ({}));
+    throw new Error(errorData.detail || 'Global sync failed');
+  }
+  return await response.json();
+}

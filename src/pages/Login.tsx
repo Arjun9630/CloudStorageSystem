@@ -114,9 +114,9 @@ export function Login() {
                 />
                 <span className="text-gray-200">Remember me</span>
               </label>
-              <a href="#" className="text-blue-400 hover:text-blue-300 transition-colors drop-shadow-sm">
+              <span className="text-blue-400/60 cursor-not-allowed transition-colors drop-shadow-sm" title="Not yet implemented">
                 Forgot password?
-              </a>
+              </span>
             </div>
 
             <button

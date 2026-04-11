@@ -516,10 +516,15 @@ if os.path.exists(dist_path):
     @app.get("/{full_path:path}")
     async def serve_react_app(full_path: str):
         # Allow API routes to be handled first (FastAPI does this by order)
-        # If it's not an API route, serve index.html
         if full_path.startswith("api"):
              raise HTTPException(status_code=404)
         
+        # Check if requested file exists in dist (e.g., favicon.png)
+        file_path = os.path.join(dist_path, full_path)
+        if os.path.isfile(file_path):
+            return FileResponse(file_path)
+            
+        # Default to index.html for SPA routing
         index_file = os.path.join(dist_path, "index.html")
         return FileResponse(index_file)
 else:

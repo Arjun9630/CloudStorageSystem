@@ -5,7 +5,7 @@ import time
 from datetime import datetime, timedelta
 
 # Use a secure random string or load from ENV
-SECRET_KEY = os.getenv("JWT_SECRET_KEY", "your-super-secret-key-change-in-prod")
+SECRET_KEY = os.getenv("JWT_SECRET_KEY")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days instance
 

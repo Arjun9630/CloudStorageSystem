@@ -83,9 +83,9 @@ export function Login() {
                 <input type="checkbox" checked={rememberMe} onChange={(e) => setRememberMe(e.target.checked)} className="rounded border-white/30 bg-white/10 text-blue-500 focus:ring-blue-400"/>
                 <span className="text-gray-200">Remember me</span>
               </label>
-              <span className="text-blue-400/60 cursor-not-allowed transition-colors drop-shadow-sm" title="Not yet implemented">
+              <Link to="/forgot-password" size="sm" className="text-blue-400 hover:text-blue-300 transition-colors drop-shadow-sm font-medium">
                 Forgot password?
-              </span>
+              </Link>
             </div>
 
             <button type="submit" disabled={isLoading} className={`w-full ${isAdminLogin ? 'bg-indigo-600/90 hover:bg-indigo-600 shadow-[0_0_20px_rgba(79,70,229,0.4)]' : 'bg-blue-600/90 hover:bg-blue-600 shadow-[0_0_20px_rgba(37,99,235,0.4)]'} backdrop-blur-sm text-white py-3 rounded-lg border border-white/20 transition-all font-medium disabled:opacity-50 disabled:cursor-not-allowed`}>

@@ -9,6 +9,9 @@ import { Recent } from './pages/Recent';
 import { Starred } from './pages/Starred';
 import { Trash } from './pages/Trash';
 import { AdminDashboard } from './pages/AdminDashboard';
+import { ForgotPassword } from './pages/ForgotPassword';
+import { ResetPassword } from './pages/ResetPassword';
+
 export const router = createBrowserRouter([
     {
         path: '/login',
@@ -18,6 +21,15 @@ export const router = createBrowserRouter([
         path: '/signup',
         element: <Signup />,
     },
+    {
+        path: '/forgot-password',
+        element: <ForgotPassword />,
+    },
+    {
+        path: '/reset-password',
+        element: <ResetPassword />,
+    },
+
     {
         path: '/',
         element: (<ProtectedRoute>

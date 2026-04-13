@@ -225,6 +225,40 @@ export async function signupAPI(name, email, password) {
     }
     return await response.json();
 }
+export async function forgotPasswordAPI(email) {
+    const response = await fetch(`${API_BASE_URL}/auth/forgot-password`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            email
+        })
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || 'Request failed');
+    }
+    return await response.json();
+}
+export async function resetPasswordAPI(token, newPassword) {
+    const response = await fetch(`${API_BASE_URL}/auth/reset-password`, {
+        method: 'POST',
+        headers: {
+            'Content-Type': 'application/json'
+        },
+        body: JSON.stringify({
+            token,
+            new_password: newPassword
+        })
+    });
+    if (!response.ok) {
+        const data = await response.json().catch(() => ({}));
+        throw new Error(data.detail || 'Reset failed');
+    }
+    return await response.json();
+}
+
 // ---- Admin Methods ----
 export async function adminListUsersAPI() {
     const response = await fetch(`${API_BASE_URL}/admin/users`, {

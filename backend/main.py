@@ -11,6 +11,8 @@ import os
 import time
 import uuid
 import psycopg2.extras
+import mailer
+
 
 app = FastAPI(title="CloudStorage API")
 
@@ -41,6 +43,14 @@ class UserSignup(BaseModel):
     name: str
     email: str
     password: str
+
+class ForgotPasswordRequest(BaseModel):
+    email: str
+
+class ResetPasswordRequest(BaseModel):
+    token: str
+    new_password: str
+
 
 # --- Dependencies ---
 def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
@@ -114,6 +124,46 @@ def login(data: UserLogin):
         
     token = auth.create_access_token({"sub": user["id"], "email": user["email"]})
     return {"token": token, "user": {"id": user["id"], "name": user["name"], "email": user["email"], "isAdmin": user["is_admin"]}}
+
+@app.post("/api/auth/forgot-password")
+async def forgot_password(data: ForgotPasswordRequest):
+    conn = database.get_db_connection()
+    cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
+    cur.execute("SELECT email FROM users WHERE email = %s", (data.email,))
+    user = cur.fetchone()
+    cur.close()
+    conn.close()
+    
+    # We always return 200 for security reasons (don't reveal if email exists)
+    if not user:
+        return {"status": "success", "message": "If this email is registered, a reset link has been sent."}
+    
+    # Generate token and send email
+    token = auth.create_reset_token(data.email)
+    success = mailer.send_reset_email(data.email, token)
+    
+    if not success:
+        raise HTTPException(status_code=500, detail="Failed to send email")
+        
+    return {"status": "success", "message": "If this email is registered, a reset link has been sent."}
+
+@app.post("/api/auth/reset-password")
+async def reset_password(data: ResetPasswordRequest):
+    email = auth.decode_reset_token(data.token)
+    if not email:
+        raise HTTPException(status_code=400, detail="Invalid or expired reset token")
+        
+    hashed_password = auth.get_password_hash(data.new_password)
+    
+    conn = database.get_db_connection()
+    cur = conn.cursor()
+    cur.execute("UPDATE users SET password_hash = %s WHERE email = %s", (hashed_password, email))
+    conn.commit()
+    cur.close()
+    conn.close()
+    
+    return {"status": "success", "message": "Password updated successfully"}
+
 
 # --- File Routes ---
 @app.get("/api/files")

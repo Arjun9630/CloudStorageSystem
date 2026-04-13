@@ -32,7 +32,9 @@ export function Dashboard() {
           <h1 className="text-2xl font-bold text-white drop-shadow-md">Dashboard</h1>
           <p className="text-gray-300 mt-1 font-medium drop-shadow-sm">Welcome back! Here's your storage overview</p>
         </div>
-        <FileUpload />
+        <div className="w-fit">
+          <FileUpload />
+        </div>
       </div>
 
       {/* Stats Cards */}

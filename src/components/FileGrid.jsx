@@ -105,8 +105,9 @@ export function FileGrid({ files, onFileClick, onDelete, onToggleStar }) {
                         <td className="px-4 sm:px-6 py-4 text-sm text-gray-400 hidden lg:table-cell truncate">
                           {new Date(file.uploadedAt).toLocaleDateString(undefined, { year: 'numeric', month: 'short', day: 'numeric' })}
                         </td>
-                        <td className="px-4 sm:px-6 py-4 text-right">
-                          <div className={`flex items-center justify-end gap-0.5 sm:gap-1 transition-opacity ${movingFileId === file.id ? 'opacity-100' : 'opacity-0 group-hover:opacity-100'}`}>
+                        <td className="px-4 sm:px-6 py-4 text-right overflow-visible">
+                          <div className={`flex items-center justify-end gap-0.5 sm:gap-1 transition-opacity ${movingFileId === file.id ? 'opacity-100' : 'opacity-100 lg:opacity-0 lg:group-hover:opacity-100'}`}>
+
                             
                             <div className="relative flex items-center justify-center">
                               <button onClick={(e) => { e.stopPropagation(); setMovingFileId(movingFileId === file.id ? null : file.id); }} className="p-2 hover:bg-white/20 rounded-lg shadow-sm text-gray-400 hover:text-blue-300 transition-colors">
@@ -141,7 +142,7 @@ export function FileGrid({ files, onFileClick, onDelete, onToggleStar }) {
                           <Icon className="w-14 h-14 text-blue-400/60 group-hover:scale-110 transition-transform duration-500 ease-out group-hover:text-blue-300"/>
                         </div>)}
                       
-                      {file.isStarred && (<div className="absolute top-3 right-3 p-1.5 bg-black/40 backdrop-blur-md rounded-full shadow-lg border border-white/10 z-10">
+                      {file.isStarred && (<div className="absolute top-3 right-3 p-1.5 bg-black/40 backdrop-blur-md rounded-full shadow-lg border border-white/10 z-10 hidden lg:flex">
                           <Star className="w-4 h-4 text-amber-400 fill-amber-400"/>
                         </div>)}
                     </div>
@@ -152,7 +153,8 @@ export function FileGrid({ files, onFileClick, onDelete, onToggleStar }) {
                     </div>
                     
                     {/* Hover Overlay Actions */}
-                    <div className={`absolute top-3 left-3 flex gap-2 transition-all duration-300 transform z-20 ${movingFileId === file.id ? 'opacity-100 translate-y-0' : 'opacity-0 group-hover:opacity-100 -translate-y-2 group-hover:translate-y-0'}`}>
+                    <div className={`absolute top-3 left-3 flex gap-2 transition-all duration-300 transform z-20 ${movingFileId === file.id ? 'opacity-100 translate-y-0' : 'opacity-100 lg:opacity-0 lg:group-hover:opacity-100 lg:-translate-y-2 lg:group-hover:translate-y-0'}`}>
+
                       <div className="relative">
                         <button onClick={(e) => { e.stopPropagation(); setMovingFileId(movingFileId === file.id ? null : file.id); }} className="p-2 bg-black/60 backdrop-blur-md border border-white/10 rounded-lg shadow-lg hover:bg-white/20 text-gray-300 hover:text-white transition-colors">
                           <FolderInput className="w-4 h-4"/>

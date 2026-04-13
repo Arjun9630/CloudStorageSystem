@@ -72,11 +72,13 @@ export function MyFiles() {
                 return null;
             return (<div className="mb-8">
             <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3 drop-shadow-sm">Folders</h2>
-            <div className="grid grid-cols-2 sm:grid-cols-4 md:grid-cols-5 lg:grid-cols-6 gap-4">
-              {visibleFolders.map(folder => (<div key={folder.id} onClick={() => setCurrentFolderId(folder.id)} className="p-3 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl hover:bg-white/20 hover:border-white/40 shadow-[0_4px_12px_rgba(0,0,0,0.2)] hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] cursor-pointer transition-all flex items-center gap-3 group">
-                  <Folder className="w-6 h-6 text-blue-300 group-hover:text-blue-200 flex-shrink-0 drop-shadow-sm"/>
-                  <span className="text-sm font-medium text-gray-200 truncate flex-1 drop-shadow-sm group-hover:text-white">{folder.name}</span>
-                  <div className="flex items-center gap-1 opacity-0 group-hover:opacity-100 transition-all">
+            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
+              {visibleFolders.map(folder => (<div key={folder.id} onClick={() => setCurrentFolderId(folder.id)} className="px-3 py-2 h-16 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl hover:bg-white/20 hover:border-white/40 shadow-[0_4px_12px_rgba(0,0,0,0.2)] hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] cursor-pointer transition-all flex items-center gap-3 group min-w-0 overflow-hidden" title={folder.name}>
+                  <div className="flex-shrink-0">
+                    <Folder className="w-6 h-6 text-blue-300 group-hover:text-blue-200 drop-shadow-sm"/>
+                  </div>
+                  <span className="text-[13px] font-medium text-gray-200 line-clamp-2 break-words flex-1 leading-tight drop-shadow-sm group-hover:text-white">{folder.name}</span>
+                  <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all shrink-0">
                     <button onClick={(e) => {
                         e.stopPropagation();
                         const newName = window.prompt('Rename folder to:', folder.name);

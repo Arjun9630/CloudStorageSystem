@@ -69,7 +69,7 @@ export function FileUpload() {
       <motion.button whileHover={{ scale: 1.02 }} whileTap={{ scale: 0.98 }} onClick={() => fileInputRef.current?.click()} className="relative overflow-hidden group flex items-center gap-2 px-5 py-2.5 bg-gradient-to-r from-blue-600 to-indigo-600 text-white font-medium rounded-xl shadow-lg shadow-blue-500/25 hover:shadow-blue-500/40 transition-all border border-blue-500/20">
         <div className="absolute inset-0 bg-white/20 translate-y-full group-hover:translate-y-0 transition-transform duration-300 ease-out"/>
         <Upload className="w-5 h-5 relative z-10"/>
-        <span className="hidden sm:inline relative z-10">Upload Files</span>
+        <span className="relative z-10">Upload Files</span>
       </motion.button>
 
       <input ref={fileInputRef} type="file" multiple onChange={(e) => {

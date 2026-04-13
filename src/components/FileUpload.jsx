@@ -1,11 +1,50 @@
-import { useRef, useState } from 'react';
+import { useRef, useState, useEffect, useCallback } from 'react';
 import { Upload, CloudUpload } from 'lucide-react';
 import { useStorage } from '../contexts/StorageContext';
 import { motion, AnimatePresence } from 'motion/react';
 export function FileUpload() {
     const [isDragging, setIsDragging] = useState(false);
     const fileInputRef = useRef(null);
+    const dragCounterRef = useRef(0);
     const { uploadFiles, isUploading, uploadProgress, currentFolderId } = useStorage();
+
+    // Global window-level drag listeners so drags are detected anywhere on the page
+    useEffect(() => {
+        const handleWindowDragEnter = (e) => {
+            e.preventDefault();
+            dragCounterRef.current++;
+            if (e.dataTransfer?.types?.includes('Files')) {
+                setIsDragging(true);
+            }
+        };
+        const handleWindowDragOver = (e) => {
+            e.preventDefault();
+        };
+        const handleWindowDragLeave = (e) => {
+            e.preventDefault();
+            dragCounterRef.current--;
+            if (dragCounterRef.current <= 0) {
+                dragCounterRef.current = 0;
+                setIsDragging(false);
+            }
+        };
+        const handleWindowDrop = (e) => {
+            e.preventDefault();
+            dragCounterRef.current = 0;
+            setIsDragging(false);
+        };
+        window.addEventListener('dragenter', handleWindowDragEnter);
+        window.addEventListener('dragover', handleWindowDragOver);
+        window.addEventListener('dragleave', handleWindowDragLeave);
+        window.addEventListener('drop', handleWindowDrop);
+        return () => {
+            window.removeEventListener('dragenter', handleWindowDragEnter);
+            window.removeEventListener('dragover', handleWindowDragOver);
+            window.removeEventListener('dragleave', handleWindowDragLeave);
+            window.removeEventListener('drop', handleWindowDrop);
+        };
+    }, []);
+
     const handleDragOver = (e) => {
         e.preventDefault();
         setIsDragging(true);
@@ -16,6 +55,8 @@ export function FileUpload() {
     };
     const handleDrop = (e) => {
         e.preventDefault();
+        e.stopPropagation();
+        dragCounterRef.current = 0;
         setIsDragging(false);
         if (e.dataTransfer.files.length > 0) {
             handleFileUpload(e.dataTransfer.files);

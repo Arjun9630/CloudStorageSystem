@@ -19,9 +19,9 @@ export function Dashboard() {
         return (<ul className="flex flex-wrap justify-center gap-x-6 gap-y-2 mt-2">
         {payload.map((entry, index) => {
                 const percent = totalStorageByType > 0 ? (entry.payload.size / totalStorageByType) * 100 : 0;
-                return (<li key={`item-${index}`} className="flex items-center gap-2 text-sm text-gray-700 font-medium">
+                return (<li key={`item-${index}`} className="flex items-center gap-2 text-sm text-white font-medium">
               <span className="w-3 h-3 rounded-full shadow-sm" style={{ backgroundColor: entry.color }}/>
-              {entry.value} <span className="text-gray-400">({percent.toFixed(2)}%)</span>
+              {entry.value} <span className="text-gray-300">({percent.toFixed(2)}%)</span>
             </li>);
             })}
       </ul>);

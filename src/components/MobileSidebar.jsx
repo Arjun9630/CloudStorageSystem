@@ -1,6 +1,6 @@
 import { useState } from 'react';
 import { NavLink } from 'react-router';
-import { Home, Clock, Star, Trash2, Cloud, Menu, X, LogOut, Folder } from 'lucide-react';
+import { Home, Clock, Star, Trash2, Cloud, Menu, X, LogOut, Folder, Shield } from 'lucide-react';
 import { useAuth } from '../contexts/AuthContext';
 import { useStorage } from '../contexts/StorageContext';
 export function MobileSidebar() {
@@ -15,6 +15,10 @@ export function MobileSidebar() {
         { path: '/starred', icon: Star, label: 'Starred' },
         { path: '/trash', icon: Trash2, label: 'Trash' },
     ];
+    if (user?.isAdmin) {
+        navItems.push({ path: '/admin', icon: Shield, label: 'Admin Panel' });
+    }
+
     return (<>
       <header className="lg:hidden fixed top-0 left-0 right-0 h-16 bg-black/40 backdrop-blur-xl border-b border-white/10 flex items-center justify-between px-4 z-50">
         <div className="flex items-center gap-2">

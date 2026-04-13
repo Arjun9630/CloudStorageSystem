@@ -1,4 +1,4 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Form
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Form, BackgroundTasks
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
@@ -126,7 +126,7 @@ def login(data: UserLogin):
     return {"token": token, "user": {"id": user["id"], "name": user["name"], "email": user["email"], "isAdmin": user["is_admin"]}}
 
 @app.post("/api/auth/forgot-password")
-async def forgot_password(data: ForgotPasswordRequest):
+async def forgot_password(data: ForgotPasswordRequest, background_tasks: BackgroundTasks):
     conn = database.get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute("SELECT email FROM users WHERE email = %s", (data.email,))
@@ -138,14 +138,12 @@ async def forgot_password(data: ForgotPasswordRequest):
     if not user:
         return {"status": "success", "message": "If this email is registered, a reset link has been sent."}
     
-    # Generate token and send email
+    # Generate token and send email in the background to prevent API hang
     token = auth.create_reset_token(data.email)
-    success = mailer.send_reset_email(data.email, token)
-    
-    if not success:
-        raise HTTPException(status_code=500, detail="Failed to send email")
+    background_tasks.add_task(mailer.send_reset_email, data.email, token)
         
     return {"status": "success", "message": "If this email is registered, a reset link has been sent."}
+
 
 @app.post("/api/auth/reset-password")
 async def reset_password(data: ResetPasswordRequest):

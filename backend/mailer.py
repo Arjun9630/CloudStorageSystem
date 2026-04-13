@@ -64,7 +64,7 @@ def send_reset_email(to_email: str, reset_token: str):
         msg.attach(part1)
         msg.attach(part2)
 
-        with smtplib.SMTP(smtp_server, int(smtp_port)) as server:
+        with smtplib.SMTP(smtp_server, int(smtp_port), timeout=10) as server:
             server.starttls()
             server.login(smtp_user, smtp_pass)
             server.sendmail(smtp_user, to_email, msg.as_string())

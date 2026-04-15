@@ -200,6 +200,25 @@ export async function renameFolderAPI(id, newName) {
         throw error;
     }
 }
+/**
+ * Toggle a folder's pinned state.
+ */
+export async function togglePinnedAPI(id) {
+    try {
+        const response = await fetch(`${API_BASE_URL}/folders/${encodeURIComponent(id)}/pin`, {
+            method: 'PUT',
+            headers: { ...getAuthHeader() }
+        });
+        if (!response.ok) {
+            const errData = await response.json().catch(() => ({}));
+            throw new Error(errData.detail || `Pin toggle failed`);
+        }
+        return await response.json();
+    }
+    catch (error) {
+        throw error;
+    }
+}
 // ---- Auth Methods ----
 export async function loginAPI(email, password) {
     const response = await fetch(`${API_BASE_URL}/auth/login`, {

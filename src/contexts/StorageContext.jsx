@@ -1,6 +1,7 @@
 import React, { createContext, useContext, useState, useEffect } from 'react';
-import { uploadFile as apiUploadFile, listFiles as apiListFiles, deleteFile as apiDeleteFile, toggleStarredAPI, toggleTrashedAPI, listFolders as apiListFolders, createFolderAPI, deleteFolderAPI, moveFileAPI, renameFileAPI, renameFolderAPI } from '../services/api';
+import { uploadFile as apiUploadFile, listFiles as apiListFiles, deleteFile as apiDeleteFile, toggleStarredAPI, toggleTrashedAPI, listFolders as apiListFolders, createFolderAPI, deleteFolderAPI, moveFileAPI, renameFileAPI, renameFolderAPI, togglePinnedAPI } from '../services/api';
 import { useAuth } from './AuthContext';
+import { useToast } from './ToastContext';
 const StorageContext = createContext(undefined);
 /* eslint-disable react-refresh/only-export-components */
 export function StorageProvider({ children }) {
@@ -9,13 +10,18 @@ export function StorageProvider({ children }) {
     const [currentFolderId, setCurrentFolderId] = useState(null);
     const [isUploading, setIsUploading] = useState(false);
     const [uploadProgress, setUploadProgress] = useState(0);
+    const [isLoading, setIsLoading] = useState(true);
     const { user } = useAuth();
+    const toast = useToast();
+
     useEffect(() => {
         if (!user) {
             setFiles([]);
             setFolders([]);
+            setIsLoading(false);
             return;
         }
+        setIsLoading(true);
         // Attempt to sync from FastAPI Backend
         Promise.all([apiListFiles(), apiListFolders()])
             .then(([serverFiles, serverFolders]) => {
@@ -25,7 +31,12 @@ export function StorageProvider({ children }) {
                 uploadedAt: new Date(f.uploadedAt),
             }));
             setFiles(mappedFiles);
-            setFolders(serverFolders);
+            const mappedFolders = serverFolders.map(f => ({
+                ...f,
+                isPinned: !!f.isPinned
+            }));
+            setFolders(mappedFolders);
+            setIsLoading(false);
         })
             .catch((err) => {
             console.error('Failed to load from backend, falling back to local storage:', err);
@@ -41,6 +52,8 @@ export function StorageProvider({ children }) {
             const storedFolders = localStorage.getItem('cloudStorage_folders');
             if (storedFolders)
                 setFolders(JSON.parse(storedFolders));
+            
+            setIsLoading(false);
         });
     }, [user]);
     useEffect(() => {
@@ -68,9 +81,11 @@ export function StorageProvider({ children }) {
                 };
                 // Render it in state
                 setFiles(prev => [...prev, serverFile]);
+                toast.success(`${file.name} uploaded successfully`, 2000);
             }
             catch (error) {
                 console.error(`Failed to upload ${file.name} to Backend:`, error);
+                toast.error(error.message || `Failed to upload ${file.name}`);
                 // Fallback: Local UI simulation if backend is down
                 const previewUrl = URL.createObjectURL(file);
                 const isImage = file.type.startsWith('image/');
@@ -101,9 +116,11 @@ export function StorageProvider({ children }) {
         try {
             const newFolder = await createFolderAPI(name, parentId);
             setFolders(prev => [...prev, newFolder]);
+            toast.success("Folder created");
         }
         catch (error) {
             console.error('Failed to create folder:', error);
+            toast.error(error.message || 'Failed to create folder');
         }
     };
     const deleteFolder = async (id) => {
@@ -115,18 +132,22 @@ export function StorageProvider({ children }) {
             setFiles(prev => prev.map(f => f.folderId === id ? { ...f, folderId: undefined } : f));
             if (currentFolderId === id)
                 setCurrentFolderId(null);
+            toast.success("Folder deleted");
         }
         catch (error) {
             console.error('Failed to delete folder:', error);
+            toast.error(error.message || 'Failed to delete folder');
         }
     };
     const renameFolder = async (id, newName) => {
         try {
             await renameFolderAPI(id, newName);
             setFolders(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+            toast.success("Folder renamed");
         }
         catch (error) {
             console.error('Failed to rename folder:', error);
+            toast.error(error.message || 'Failed to rename folder');
         }
     };
     const deleteFile = async (id) => {
@@ -134,18 +155,22 @@ export function StorageProvider({ children }) {
         try {
             await toggleTrashedAPI(id);
             setFiles(prev => prev.map(f => f.id === id ? { ...f, isTrashed: true } : f));
+            toast.success("File moved to trash");
         }
         catch (error) {
             console.error('Failed to trash file:', error);
+            toast.error(error.message || 'Failed to move file to trash');
         }
     };
     const moveFile = async (id, folderId) => {
         try {
             await moveFileAPI(id, folderId);
             setFiles(prev => prev.map(f => f.id === id ? { ...f, folderId: folderId || undefined } : f));
+            toast.success("File moved");
         }
         catch (error) {
             console.error('Failed to move file:', error);
+            toast.error(error.message || 'Failed to move file');
         }
     };
     const permanentlyDeleteFile = async (id) => {
@@ -153,9 +178,11 @@ export function StorageProvider({ children }) {
         try {
             await apiDeleteFile(id);
             setFiles(prev => prev.filter(f => f.id !== id));
+            toast.success("File deleted permanently");
         }
         catch (error) {
             console.error('Failed to permanently delete file:', error);
+            toast.error(error.message || 'Failed to delete file');
         }
     };
     const restoreFile = async (id) => {
@@ -163,9 +190,11 @@ export function StorageProvider({ children }) {
         try {
             await toggleTrashedAPI(id);
             setFiles(prev => prev.map(f => f.id === id ? { ...f, isTrashed: false } : f));
+            toast.success("File restored");
         }
         catch (error) {
             console.error('Failed to restore file:', error);
+            toast.error(error.message || 'Failed to restore file');
         }
     };
     const toggleStar = async (id) => {
@@ -175,15 +204,41 @@ export function StorageProvider({ children }) {
         }
         catch (error) {
             console.error('Failed to star file:', error);
+            toast.error(error.message || 'Failed to update file');
         }
     };
     const renameFile = async (id, newName) => {
         try {
             await renameFileAPI(id, newName);
             setFiles(prev => prev.map(f => f.id === id ? { ...f, name: newName } : f));
+            toast.success("File renamed");
         }
         catch (error) {
             console.error('Failed to rename file:', error);
+            toast.error(error.message || 'Failed to rename file');
+        }
+    };
+    const togglePinFolder = async (id) => {
+        try {
+            const folder = folders.find(f => f.id === id);
+            if (!folder) return;
+
+            // Check limit if pinning
+            if (!folder.isPinned) {
+                const pinnedCount = folders.filter(f => f.isPinned).length;
+                if (pinnedCount >= 6) {
+                    toast.error("Maximum 6 folders can be pinned");
+                    return;
+                }
+            }
+
+            const result = await togglePinnedAPI(id);
+            setFolders(prev => prev.map(f => f.id === id ? { ...f, isPinned: result.isPinned } : f));
+            toast.success(result.isPinned ? "Folder pinned" : "Folder unpinned");
+        }
+        catch (error) {
+            console.error('Failed to toggle pin:', error);
+            toast.error(error.message || 'Failed to pin folder');
         }
     };
     const totalStorage = 256 * 1024 * 1024; // 256 MB Server Size Match
@@ -217,11 +272,13 @@ export function StorageProvider({ children }) {
             toggleStar,
             renameFile,
             renameFolder,
+            togglePinFolder,
             totalStorage,
             usedStorage,
             storageByType,
             isUploading,
             uploadProgress,
+            isLoading,
         }}>
       {children}
     </StorageContext.Provider>);

@@ -1,9 +1,12 @@
 import psycopg2
 from psycopg2 import Error, extras
 import os
+import logging
 from dotenv import load_dotenv
 
 load_dotenv()
+
+logger = logging.getLogger(__name__)
 
 DATABASE_URL = os.getenv("DATABASE_URL")
 
@@ -14,7 +17,7 @@ def get_db_connection():
         conn = psycopg2.connect(DATABASE_URL)
         return conn
     except Error as e:
-        print(f"Error connecting to database: {e}")
+        logger.error(f"Error connecting to database: {e}")
     return conn
 
 def init_db():
@@ -43,6 +46,7 @@ def init_db():
                 user_id TEXT NOT NULL,
                 name TEXT NOT NULL,
                 parent_id TEXT REFERENCES folders(id),
+                is_pinned BOOLEAN DEFAULT FALSE,
                 created_at TIMESTAMP DEFAULT CURRENT_TIMESTAMP,
                 FOREIGN KEY (user_id) REFERENCES users (id)
             );
@@ -64,6 +68,13 @@ def init_db():
                 FOREIGN KEY (user_id) REFERENCES users (id)
             );
             """)
+
+            # Create Indexes
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_user_id ON files(user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_files_folder_id ON files(folder_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_folders_user_id ON folders(user_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_folders_parent_id ON folders(parent_id);")
+            cursor.execute("CREATE INDEX IF NOT EXISTS idx_users_email ON users(email);")
             
             conn.commit()
 
@@ -74,17 +85,24 @@ def init_db():
             except Error:
                 conn.rollback()
 
-            print("Database tables initialized.")
+            # Migration: Ensure is_pinned exists in folders
+            try:
+                cursor.execute("ALTER TABLE folders ADD COLUMN IF NOT EXISTS is_pinned BOOLEAN DEFAULT FALSE;")
+                conn.commit()
+            except Error:
+                conn.rollback()
+
+            logger.info("Database tables and indexes initialized.")
         except Error as e:
-            print(f"Error creating tables: {e}")
+            logger.error(f"Error creating tables/indexes: {e}")
         finally:
             cursor.close()
             conn.close()
     else:
-        print("Error! cannot create the database connection.")
+        logger.error("Error! cannot create the database connection.")
 
 # Initialize the DB if configured
 if DATABASE_URL:
     init_db()
 else:
-    print("WARNING: DATABASE_URL not found in environment. Database not initialized.")
+    logger.warning("WARNING: DATABASE_URL not found in environment. Database not initialized.")

@@ -3,11 +3,50 @@ from jose import jwt
 import os
 import time
 from datetime import datetime, timedelta
+import logging
+import re
+
+logger = logging.getLogger(__name__)
 
 # Use a secure random string or load from ENV
 SECRET_KEY = os.getenv("JWT_SECRET_KEY")
+if not SECRET_KEY:
+    raise ValueError("JWT_SECRET_KEY environment variable is required")
 ALGORITHM = "HS256"
 ACCESS_TOKEN_EXPIRE_MINUTES = 60 * 24 * 7 # 7 days instance
+
+def validate_password_strength(password: str) -> bool:
+    """Check if password meets complexity requirements: min 8 chars, 1 uppercase, 1 lowercase, 1 digit, 1 special."""
+    if len(password) < 8:
+        return False
+    if not re.search(r"[A-Z]", password):
+        return False
+    if not re.search(r"[a-z]", password):
+        return False
+    if not re.search(r"\d", password):
+        return False
+    if not re.search(r"[!@#$%^&*(),.?\":{}|<>]", password):
+        return False
+    return True
+
+def sanitize_name(name: str) -> str:
+    """Sanitize file or folder name to prevent path traversal and strip invalid characters."""
+    if not name:
+        return "unnamed"
+    # Remove path components
+    name = os.path.basename(name)
+    # Remove control characters
+    name = re.sub(r'[\x00-\x1f\x7f-\x9f]', '', name)
+    # Remove problematic characters
+    name = re.sub(r'[<>:"/\\|?*]', '_', name)
+    # Limit length
+    if len(name) > 255:
+        name = name[:250] + "_trim"
+    name = name.strip(' .')
+    if not name:
+        return "unnamed"
+    return name
+
 
 def verify_password(plain_password: str, hashed_password: str) -> bool:
     """Check if the provided plain text password matches the hashed password."""
@@ -17,7 +56,7 @@ def verify_password(plain_password: str, hashed_password: str) -> bool:
         hash_bytes = hashed_password.encode('utf-8')
         return bcrypt.checkpw(password_bytes, hash_bytes)
     except Exception as e:
-        print(f"Error verifying password: {e}")
+        logger.error(f"Error verifying password: {e}")
         return False
 
 def get_password_hash(password: str) -> str:

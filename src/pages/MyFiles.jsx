@@ -3,9 +3,9 @@ import { useStorage } from '../contexts/StorageContext';
 import { FileGrid } from '../components/FileGrid';
 import { FilePreview } from '../components/FilePreview';
 import { FileUpload } from '../components/FileUpload';
-import { Search, Folder, ChevronRight, Trash2, FolderPlus, Edit2 } from 'lucide-react';
+import { Search, Folder, ChevronRight, Trash2, FolderPlus, Edit2, Pin, PinOff } from 'lucide-react';
 export function MyFiles() {
-    const { files, folders, currentFolderId, setCurrentFolderId, createFolder, deleteFolder, renameFolder, deleteFile, toggleStar, renameFile } = useStorage();
+    const { files, folders, currentFolderId, setCurrentFolderId, createFolder, deleteFolder, renameFolder, deleteFile, toggleStar, renameFile, togglePinFolder } = useStorage();
     const [selectedFile, setSelectedFile] = useState(null);
     const [searchQuery, setSearchQuery] = useState('');
     const currentFolder = currentFolderId ? folders.find(f => f.id === currentFolderId) : null;
@@ -72,13 +72,21 @@ export function MyFiles() {
                 return null;
             return (<div className="mb-8">
             <h2 className="text-sm font-semibold text-gray-400 uppercase tracking-wide mb-3 drop-shadow-sm">Folders</h2>
-            <div className="grid grid-cols-1 sm:grid-cols-2 md:grid-cols-3 lg:grid-cols-4 xl:grid-cols-6 gap-4">
-              {visibleFolders.map(folder => (<div key={folder.id} onClick={() => setCurrentFolderId(folder.id)} className="px-3 py-2 h-16 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl hover:bg-white/20 hover:border-white/40 shadow-[0_4px_12px_rgba(0,0,0,0.2)] hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] cursor-pointer transition-all flex items-center gap-3 group min-w-0 overflow-hidden" title={folder.name}>
-                  <div className="flex-shrink-0">
-                    <Folder className="w-6 h-6 text-blue-300 group-hover:text-blue-200 drop-shadow-sm"/>
+            <div className="grid grid-cols-[repeat(auto-fill,minmax(240px,1fr))] gap-4">
+              {visibleFolders.map(folder => (<div key={folder.id} onClick={() => setCurrentFolderId(folder.id)} className="px-4 py-2 h-16 bg-white/10 backdrop-blur-md border border-white/20 rounded-xl hover:bg-white/20 hover:border-white/40 shadow-[0_4px_12px_rgba(0,0,0,0.2)] hover:shadow-[0_0_15px_rgba(255,255,255,0.1)] cursor-pointer transition-all flex items-center justify-between gap-3 group min-w-0" title={folder.name}>
+                  <div className="flex items-center gap-3 overflow-hidden flex-1">
+                    <div className="flex-shrink-0">
+                      <Folder className="w-6 h-6 text-blue-300 group-hover:text-blue-200 drop-shadow-sm"/>
+                    </div>
+                    <span className="text-[14px] font-medium text-gray-200 truncate whitespace-nowrap leading-tight drop-shadow-sm group-hover:text-white flex-1">{folder.name}</span>
                   </div>
-                  <span className="text-[13px] font-medium text-gray-200 line-clamp-2 break-words flex-1 leading-tight drop-shadow-sm group-hover:text-white">{folder.name}</span>
                   <div className="flex items-center gap-1 opacity-100 lg:opacity-0 lg:group-hover:opacity-100 transition-all shrink-0">
+                    <button onClick={(e) => {
+                        e.stopPropagation();
+                        togglePinFolder(folder.id);
+                    }} className={`p-1 rounded transition-all ${folder.isPinned ? 'text-yellow-400 bg-yellow-400/10 hover:bg-yellow-400/20' : 'text-gray-400 hover:bg-white/10 hover:text-white'}`} title={folder.isPinned ? "Unpin folder" : "Pin folder"}>
+                      {folder.isPinned ? <PinOff className="w-4 h-4"/> : <Pin className="w-4 h-4"/>}
+                    </button>
                     <button onClick={(e) => {
                         e.stopPropagation();
                         const newName = window.prompt('Rename folder to:', folder.name);

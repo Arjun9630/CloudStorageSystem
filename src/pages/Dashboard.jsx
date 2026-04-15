@@ -67,11 +67,11 @@ export function Dashboard() {
         <div className="bg-white/10 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-[0_8px_32px_rgba(0,0,0,0.3)] hover:bg-white/15 transition-all">
           <div className="flex items-center justify-between">
             <div>
-              <p className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Recent Uploads</p>
-              <p className="text-3xl font-bold text-white mt-2 drop-shadow-sm">{recentFiles.length}</p>
+              <p className="text-sm font-semibold text-gray-300 uppercase tracking-wide">Total Folders</p>
+              <p className="text-3xl font-bold text-white mt-2 drop-shadow-sm">{folders.length}</p>
             </div>
             <div className="w-14 h-14 bg-green-500/20 rounded-2xl flex items-center justify-center border border-green-400/30 shadow-[0_0_15px_rgba(34,197,94,0.3)]">
-              <Upload className="w-7 h-7 text-green-400"/>
+              <Folder className="w-7 h-7 text-green-400"/>
             </div>
           </div>
         </div>
@@ -107,31 +107,29 @@ export function Dashboard() {
             </div>)}
         </div>
 
-        {/* Folders Overview */}
+        {/* Pinned Folders Overview */}
         <div className="bg-white/5 backdrop-blur-xl border border-white/10 rounded-2xl p-6 shadow-lg flex flex-col">
           <div className="flex items-center justify-between mb-6 border-b border-white/10 pb-4">
-            <h2 className="text-lg font-bold text-white drop-shadow-sm">Your Folders</h2>
-            <button onClick={() => {
-            const name = window.prompt('Enter folder name:');
-            if (name && name.trim())
-                createFolder(name.trim());
-        }} className="p-1.5 bg-blue-500/20 text-blue-400 rounded-lg hover:bg-blue-500/30 border border-blue-400/30 transition-all shadow-[0_0_10px_rgba(59,130,246,0.3)]">
-              <Plus className="w-5 h-5"/>
-            </button>
+            <h2 className="text-lg font-bold text-white drop-shadow-sm">Pinned Folders</h2>
           </div>
           <div className="flex-1 overflow-y-auto pr-2">
-            {folders.length > 0 ? (<div className="grid grid-cols-2 sm:grid-cols-3 gap-3">
-                {folders.map(folder => (<div key={folder.id} onClick={() => {
+            {folders.filter(f => f.isPinned).length > 0 ? (
+              <div className="grid grid-cols-[repeat(auto-fill,minmax(180px,1fr))] gap-3">
+                {folders.filter(f => f.isPinned).map(folder => (<div key={folder.id} onClick={() => {
                     setCurrentFolderId(folder.id);
                     navigate('/files');
-                }} className="p-4 bg-black/20 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 cursor-pointer transition-all flex flex-col items-center justify-center text-center group shadow-inner">
+                }} className="p-4 bg-black/20 border border-white/5 rounded-xl hover:bg-white/10 hover:border-white/20 cursor-pointer transition-all flex flex-col items-center justify-center text-center group shadow-inner min-h-[120px]">
                     <Folder className="w-8 h-8 text-blue-400/80 mb-2 group-hover:text-blue-400 transition-colors drop-shadow-md"/>
-                    <span className="text-sm font-semibold text-gray-300 truncate w-full group-hover:text-white transition-colors">{folder.name}</span>
+                    <span className="text-[13px] font-semibold text-gray-300 truncate whitespace-nowrap w-full group-hover:text-white transition-colors">{folder.name}</span>
                   </div>))}
-              </div>) : (<div className="h-full flex flex-col items-center justify-center text-gray-400 min-h-[200px]">
+              </div>
+            ) : (
+              <div className="h-full flex flex-col items-center justify-center text-gray-400 min-h-[200px]">
                 <Folder className="w-12 h-12 mb-3 text-gray-500"/>
-                <p>No folders created yet</p>
-              </div>)}
+                <p>No pinned folders</p>
+                <p className="text-xs mt-1">Pin folders in My Files to see them here</p>
+              </div>
+            )}
           </div>
         </div>
       </div>

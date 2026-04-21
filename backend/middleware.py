@@ -14,6 +14,16 @@ class IPViolationState:
 
 ip_violation_state = IPViolationState()
 
+def get_client_ip(request: Request):
+    """
+    Returns the real client IP, even behind a proxy like Render or Cloudflare.
+    """
+    forwarded = request.headers.get("X-Forwarded-For")
+    if forwarded:
+        # X-Forwarded-For can contain multiple IPs; the first one is the real client.
+        return forwarded.split(",")[0].strip()
+    return request.client.host if request.client else "unknown"
+
 class SecurityHeadersMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
         response = await call_next(request)
@@ -58,7 +68,7 @@ class SuspiciousQueryMiddleware(BaseHTTPMiddleware):
 
 class IPBanMiddleware(BaseHTTPMiddleware):
     async def dispatch(self, request: Request, call_next):
-        client_ip = request.client.host if request.client else "unknown"
+        client_ip = get_client_ip(request)
         current_time = time.time()
         
         # Check if currently banned

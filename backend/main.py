@@ -2,7 +2,7 @@ from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, F
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
-from middleware import SecurityHeadersMiddleware, SuspiciousQueryMiddleware, IPBanMiddleware
+from middleware import SecurityHeadersMiddleware, SuspiciousQueryMiddleware, IPBanMiddleware, get_client_ip
 from slowapi import Limiter, _rate_limit_exceeded_handler
 from slowapi.util import get_remote_address
 from slowapi.errors import RateLimitExceeded
@@ -27,7 +27,12 @@ if database.DATABASE_URL:
     database.init_db()
 
 # Add CORS middleware
-allowed_origins = os.getenv("CORS_ALLOWED_ORIGINS", "http://localhost:5173,http://localhost:3000").split(",")
+# Strict CORS check: Enforce that the environment variable is set
+allowed_origins_raw = os.getenv("CORS_ALLOWED_ORIGINS")
+if not allowed_origins_raw:
+    raise ValueError("CRITICAL: CORS_ALLOWED_ORIGINS must be set in production/deployment!")
+
+allowed_origins = allowed_origins_raw.split(",")
 
 app.add_middleware(
     CORSMiddleware,
@@ -41,7 +46,7 @@ app.add_middleware(SecurityHeadersMiddleware)
 app.add_middleware(SuspiciousQueryMiddleware)
 app.add_middleware(IPBanMiddleware)
 
-limiter = Limiter(key_func=get_remote_address)
+limiter = Limiter(key_func=get_client_ip)
 app.state.limiter = limiter
 app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 

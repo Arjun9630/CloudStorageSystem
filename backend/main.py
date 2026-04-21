@@ -1,7 +1,11 @@
-from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Form, BackgroundTasks
+from fastapi import FastAPI, UploadFile, File, HTTPException, Depends, Header, Form, BackgroundTasks, Request
 from fastapi.staticfiles import StaticFiles
 from fastapi.responses import FileResponse
 from fastapi.middleware.cors import CORSMiddleware
+from middleware import SecurityHeadersMiddleware, SuspiciousQueryMiddleware, IPBanMiddleware
+from slowapi import Limiter, _rate_limit_exceeded_handler
+from slowapi.util import get_remote_address
+from slowapi.errors import RateLimitExceeded
 from typing import List, Dict, Any, Optional
 from pydantic import BaseModel
 import aws
@@ -32,6 +36,14 @@ app.add_middleware(
     allow_methods=["GET", "POST", "PUT", "DELETE", "OPTIONS"],
     allow_headers=["Content-Type", "Authorization"],
 )
+
+app.add_middleware(SecurityHeadersMiddleware)
+app.add_middleware(SuspiciousQueryMiddleware)
+app.add_middleware(IPBanMiddleware)
+
+limiter = Limiter(key_func=get_remote_address)
+app.state.limiter = limiter
+app.add_exception_handler(RateLimitExceeded, _rate_limit_exceeded_handler)
 
 # Constants
 MAX_STORAGE_QUOTA_BYTES = 256 * 1024 * 1024  # 256MB
@@ -80,7 +92,8 @@ def get_current_user(authorization: Optional[str] = Header(None)) -> dict:
 
 # --- Auth Routes ---
 @app.post("/api/auth/signup")
-def signup(data: UserSignup):
+@limiter.limit("10/minute")
+def signup(request: Request, data: UserSignup):
     if not auth.validate_password_strength(data.password):
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters long and contain uppercase, lowercase, digit, and special character.")
 
@@ -116,7 +129,8 @@ def signup(data: UserSignup):
     return {"token": token, "user": {"id": user_id, "name": data.name, "email": data.email, "isAdmin": False}}
 
 @app.post("/api/auth/login")
-def login(data: UserLogin):
+@limiter.limit("5/minute")
+def login(request: Request, data: UserLogin):
     conn = database.get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute("SELECT id, name, email, password_hash, is_admin FROM users WHERE email = %s", (data.email,))
@@ -131,7 +145,8 @@ def login(data: UserLogin):
     return {"token": token, "user": {"id": user["id"], "name": user["name"], "email": user["email"], "isAdmin": user["is_admin"]}}
 
 @app.post("/api/auth/forgot-password")
-async def forgot_password(data: ForgotPasswordRequest, background_tasks: BackgroundTasks):
+@limiter.limit("5/minute")
+async def forgot_password(request: Request, data: ForgotPasswordRequest, background_tasks: BackgroundTasks):
     conn = database.get_db_connection()
     cur = conn.cursor(cursor_factory=psycopg2.extras.DictCursor)
     cur.execute("SELECT email FROM users WHERE email = %s", (data.email,))
@@ -151,7 +166,8 @@ async def forgot_password(data: ForgotPasswordRequest, background_tasks: Backgro
 
 
 @app.post("/api/auth/reset-password")
-async def reset_password(data: ResetPasswordRequest):
+@limiter.limit("5/minute")
+async def reset_password(request: Request, data: ResetPasswordRequest):
     if not auth.validate_password_strength(data.new_password):
         raise HTTPException(status_code=400, detail="Password must be at least 8 characters long and contain uppercase, lowercase, digit, and special character.")
 
@@ -202,7 +218,7 @@ async def list_files(prefix: str = "", skip: int = 0, limit: int = 200, current_
         return formatted_files
     except Exception as e:
         logger.error(f"Error listing files: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.post("/api/files/upload")
 async def upload_file(
@@ -267,7 +283,7 @@ async def upload_file(
         raise e
     except Exception as e:
         logger.error(f"Error uploading file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.delete("/api/files/{file_id}")
 async def delete_file(file_id: str, current_user: dict = Depends(get_current_user)):
@@ -297,7 +313,7 @@ async def delete_file(file_id: str, current_user: dict = Depends(get_current_use
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error deleting file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.put("/api/files/{file_id}/star")
 async def toggle_star(file_id: str, current_user: dict = Depends(get_current_user)):
@@ -320,7 +336,8 @@ async def toggle_star(file_id: str, current_user: dict = Depends(get_current_use
         
         return {"status": "success", "isStarred": new_val}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Internal Server Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.put("/api/files/{file_id}/trash")
 async def toggle_trash(file_id: str, current_user: dict = Depends(get_current_user)):
@@ -343,7 +360,8 @@ async def toggle_trash(file_id: str, current_user: dict = Depends(get_current_us
         
         return {"status": "success", "isTrashed": new_val}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Internal Server Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 class FileMove(BaseModel):
     folder_id: Optional[str] = None
@@ -365,7 +383,8 @@ async def move_file(file_id: str, data: FileMove, current_user: dict = Depends(g
         conn.close()
         return {"status": "success"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Internal Server Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 class RenameRequest(BaseModel):
     name: str
@@ -383,7 +402,7 @@ async def rename_file(file_id: str, data: RenameRequest, current_user: dict = De
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error renaming file: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 # --- Folder Routes ---
 class FolderCreate(BaseModel):
@@ -401,7 +420,8 @@ async def list_folders(current_user: dict = Depends(get_current_user)):
         conn.close()
         return [{"id": r["id"], "name": r["name"], "parentId": r["parent_id"], "isPinned": bool(r["is_pinned"]), "createdAt": r["created_at"].isoformat() if hasattr(r["created_at"], "isoformat") else r["created_at"]} for r in rows]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Internal Server Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.post("/api/folders")
 async def create_folder(data: FolderCreate, current_user: dict = Depends(get_current_user)):
@@ -421,7 +441,7 @@ async def create_folder(data: FolderCreate, current_user: dict = Depends(get_cur
         return {"id": folder_id, "name": safe_name, "parentId": data.parent_id, "createdAt": created_time}
     except Exception as e:
         logger.error(f"Error creating folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.put("/api/folders/{folder_id}/pin")
 async def toggle_folder_pin(folder_id: str, current_user: dict = Depends(get_current_user)):
@@ -458,7 +478,7 @@ async def toggle_folder_pin(folder_id: str, current_user: dict = Depends(get_cur
         raise e
     except Exception as e:
         logger.error(f"Error toggling folder pin: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.delete("/api/folders/{folder_id}")
 async def delete_folder(folder_id: str, current_user: dict = Depends(get_current_user)):
@@ -473,7 +493,8 @@ async def delete_folder(folder_id: str, current_user: dict = Depends(get_current
         conn.close()
         return {"status": "success"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Internal Server Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.put("/api/folders/{folder_id}/rename")
 async def rename_folder(folder_id: str, data: RenameRequest, current_user: dict = Depends(get_current_user)):
@@ -488,7 +509,7 @@ async def rename_folder(folder_id: str, data: RenameRequest, current_user: dict 
         return {"status": "success"}
     except Exception as e:
         logger.error(f"Error renaming folder: {e}")
-        raise HTTPException(status_code=500, detail=str(e))
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 # --- Admin Routes ---
 @app.get("/api/admin/users")
@@ -520,7 +541,8 @@ async def admin_list_users(current_user: dict = Depends(get_current_user)):
             "createdAt": u["created_at"].isoformat() if hasattr(u["created_at"], "isoformat") else u["created_at"]
         } for u in users]
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Internal Server Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.delete("/api/admin/users/{user_id}")
 async def admin_delete_user(user_id: str, current_user: dict = Depends(get_current_user)):
@@ -556,7 +578,8 @@ async def admin_delete_user(user_id: str, current_user: dict = Depends(get_curre
         
         return {"status": "success", "message": "User and all associated data deleted"}
     except Exception as e:
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Internal Server Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 @app.post("/api/admin/sync")
 async def admin_global_sync(current_user: dict = Depends(get_current_user)):
@@ -623,7 +646,8 @@ async def admin_global_sync(current_user: dict = Depends(get_current_user)):
     except Exception as e:
         if 'conn' in locals() and conn:
             conn.rollback()
-        raise HTTPException(status_code=500, detail=str(e))
+        logger.error(f"Internal Server Error: {e}")
+        raise HTTPException(status_code=500, detail="Internal Server Error")
 
 # --- Static File Serving (Production) ---
 # Mount the React build directory
